@@ -1,0 +1,208 @@
+---
+title: "R Notebook"
+author: "Ian Katz"
+date: "26 October 2021"
+output: html_notebook
+---
+
+### SUMMARY
+
+The objective of this analysis is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict how well they did a particular exercise.
+
+Electronic measurement devices were unobtrusively attached to six participants' (1) belt, (2) forearm, (3) arm, and (4) dumbell to collect data to predict the manner in which they did the exercise.
+
+The 'classe' variable provides an indication of how well a particular exercise was done with reference to the following five outcomes:
+
+(A) Exactly according to the specification.
+(B) Throwing the elbow to the front.
+(C) Lifting the dumbell only halfway.
+(D) Lowering the dumbell only halfway.
+(E) Throwing the hips to the front.
+
+
+My report describes the following:
+
+(1) How I built my model.
+(2) How I used cross validation.
+(3) An estimate of the expected out of sample error.
+(4) Why I made the choices I made.
+
+Finallly, the prediction model is applied to predict 20 different test cases in order to evaluate the out-of-sample effectiveness of the model. The final model was effective and the test results scored 100% correct on this out-of-sample test data.  
+
+My analysis follows the suggestions and findings from the following analysis document:
+
+*Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.*
+
+*Read more: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har*
+
+More specifically I follow their definition of quality as *"...the adherence of the execution of an activity to its specification."*
+
+This definition implies that a possible solution to the problem is to design *"... a qualitative activity recognition system... that observes the user’s execution of an activity and compares it to a specification. Hence, even if there is not a single accepted way of performing an activity, if a manner of execution is specified, we can measure quality."*
+
+The results of my exploratory data anaysis suggested that the data could be well modeled as a Classification Model using Random Forests. To reduce the effects of non-linearity in the data, the features (dependent variables) were standardized and transformed to be closer to a normal distribution.
+
+
+
+
+To begin, I used the following R packages:
+
+```{r}
+# Packages
+library(readr); library(caret); library(dplyr)
+
+```
+
+There are two resulting key components of an effective qualitative activity recognotion system:
+
+(1) Specifying correct execution, and
+(2) Robust detection of execution mistakes.
+
+Following the results of my exploratory data analysis, the following changes were made to the initial data set in order to create (1) a training data set, (2) a test data set and (3) a validation data set.
+
+Also, note that a second validation data set was created to predict the final twenty assignment test observations. 
+
+```{r}
+dataSet <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+
+dataSet$classe <- as.factor(dataSet$classe)
+
+dataSet <- select(dataSet[, -1], -contains(c("user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window", "avg_", "var_", "stddev_", "skewness_", "kurtosis", "max_", "min_", "amplitude_"), ignore.case = TRUE, vars = NULL))
+
+primaryIndex <- createDataPartition(y = dataSet$classe, p = 0.6, list = FALSE)
+trainDataSet <- dataSet[primaryIndex, ]
+
+trainIndex <- createDataPartition(y = trainDataSet$classe, p = 0.8, list = FALSE)
+
+trainData <- trainDataSet[trainIndex, ]
+testData <- trainDataSet[-trainIndex, ]
+
+validationData <- dataSet[-primaryIndex, ]
+
+
+```
+
+### How I used cross validation
+
+In terms of the prediction study design and cross-validation, I followed an approach where the data set was split into a training data set (60%), an independent testing data set (20%) and a validation data set (20%). The test data set and validation data sets are out-of-sample data sets that are independent of the training data set. I then applied 10-fold Cross-Validation to the data.
+ 
+Also, the modeling is cross-sectional and time-related variables have been excluded from the model to reduce or eliminate any specific time-related associations within the data set and better balance the bias-variance trade-off.
+
+Below is a summary of the structure of the 53 features (variables) and 9,423 observations included in the training model. 
+
+```{r}
+str(trainData)
+
+```
+
+### How I built my model
+
+The training model was fit using Random Forests. Random Forests was selected as a method to train the model as empirical tests demonstrate improved model accuracy compared with Bagged Trees by way of an embedded structure that decorrelates the trees. Random Forests is also one of the simplest and most accurate non-proprietary machine learning methods. 
+
+To begin the modeling process, I have set a random number generator seed to enable reproducibility of the model results.
+
+The variables were preprocessed by centering and scaling the data. A Yeo-Johnson transfomation was then applied to allow zero and non-negatives values of the transformed variables. The Yeo-Johnson transformation is a power transformation that is used to create a monotonic transformatation of the data. It is essentially a data transformation method that stabilizes the variance and makes the data more similar to a normal distribution.  
+
+The 'classe' prediction variable was excluded from the transformation. As described previously, the 'classe' variable is a factor variable with five components that the model will try to predict.
+
+In order to make the model robust and to predict more effectively on out-of-sample data, as part of the model's design, I tried to eliminate factors that would be directly associated with the individual test participants. This included specific associations of the data with time.
+
+
+```{r}
+set.seed(1)
+
+trainModel <- train(classe ~ ., data = trainData,
+                    preProcess = c("center", "scale", "YeoJohnson")[-53],
+                    method = "rf",
+                    trControl = trainControl(method = "cv"))
+
+```
+
+
+The resulting data are summarised by the 'classe' variable within five components:
+
+(A) Exactly according to the specification.
+(B) Throwing the elbow to the front.
+(C) Lifting the dumbell only halfway.
+(D) Lowering the dumbell only halfway.
+(E) Throwing the hips to the front.
+
+Accuracy was used to select the optimal model using the largest value. This was achieved with an 'accuracy' of 98.7% and 'mtry' indicates that 27 predictors were used for each split in the tree.
+
+```{r}
+
+trainModel
+
+```
+
+The following table displays the twenty most important features and suggests that there are about seven particularly important explanatory variables in the model. 
+
+```{r}
+varImp(trainModel)
+```
+
+The following Confusion Matrix displays the reults of the Training Model on Test Data and suggests that the Training Model was able to predict outcomes with 99% Accuracy and within a 95% Confidence Interval between 99.1% and 99.7%.
+
+```{r}
+predictModel <- predict(trainModel, newdata = testData)
+
+confusionMatrix(predictModel, testData$classe)
+
+```
+
+Similar results were achieved on the Validation Data Set. The following Confusion Matrix displays the reults of the Training Model on Validation Data and suggests that the Training Model was able to predict outcomes with 99% Accuracy and within a 95% Confidence Interval between 99.2% and 99.6%.
+
+
+```{r}
+predictModel <- predict(trainModel, newdata = validationData)
+
+confusionMatrix(predictModel, validationData$classe)
+
+
+```
+
+Finallly, the prediction model is applied to predict 20 different test cases in order to evaluate the out-of-sample effectiveness of the model.  
+
+```{r}
+validationData20 <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+validationData20 <- select(validationData20[, -1], -contains(c("user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window", "avg_", "var_", "stddev_", "skewness_", "kurtosis", "max_", "min_", "amplitude_"), ignore.case = TRUE, vars = NULL))
+
+predictModel20 <- predict(trainModel, newdata = validationData20[1:20, -53])
+
+```
+
+The test results were 100% correct, as follows:
+
+(1) B
+(2) A
+(3) B
+(4) A
+(5) A
+(6) E
+(7) D
+(8) B
+(9) A
+(10) A
+(11) B
+(12) C
+(13) B
+(14) A
+(15) E
+(16) E
+(17) A
+(18) B
+(19) B
+(20) B
+
+
+```{r}
+predictModel20
+```
+
+
+### Conclusion
+
+The combination of a model using Random Forests with 10-fold cross-validation was effective and accurate at being able to correctly predict and classify how well a particular exercise was done.
+
+
+
+
